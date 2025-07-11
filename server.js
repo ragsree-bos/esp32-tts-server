@@ -1,25 +1,41 @@
-const express = require("express");
-const cors = require("cors");
-const gTTS = require("gtts");
-
+const express = require('express');
+const cors = require('cors');
+const ytdlp = require('yt-dlp-wrap');
+const { exec } = require('child_process');
+const fs = require('fs');
 const app = express();
-const port = process.env.PORT || 3000;
-
 app.use(cors());
 
-app.get("/tts", async (req, res) => {
-  const text = req.query.text;
-  if (!text) return res.status(400).send("Missing text");
+app.get('/music', async (req, res) => {
+  const query = req.query.query;
+  if (!query) return res.status(400).send("Missing song name.");
 
-  const tts = new gTTS(text, "en");
-  res.set({ "Content-Type": "audio/mpeg" });
-  tts.stream().pipe(res);
+  const file = '/tmp/music.wav';
+  const output = '/tmp/audio.mp3';
+
+  // Clean any previous file
+  if (fs.existsSync(file)) fs.unlinkSync(file);
+  if (fs.existsSync(output)) fs.unlinkSync(output);
+
+  const search = `ytsearch1:${query}`;
+  const ytdlpWrap = new ytdlp();
+  try {
+    await ytdlpWrap.exec([
+      search,
+      "-f", "bestaudio",
+      "-o", output
+    ]);
+
+    exec(`ffmpeg -y -i ${output} -ar 22050 -ac 1 ${file}`, (err) => {
+      if (err) return res.status(500).send("FFmpeg failed.");
+      res.set({ 'Content-Type': 'audio/wav' });
+      const stream = fs.createReadStream(file);
+      stream.pipe(res);
+    });
+  } catch (e) {
+    res.status(500).send("Failed to fetch song.");
+  }
 });
 
-app.get("/", (req, res) => {
-  res.send("ESP32 TTS Server is running");
-});
-
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Music server on ${PORT}`));
